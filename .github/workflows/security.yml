@@ -1,0 +1,153 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Weekly on Monday at 03:00 UTC
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.11"
+  PNPM_VERSION: "10.30.1"
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/aivalink
+
+jobs:
+  npm-audit:
+    name: npm / pnpm Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run pnpm audit
+        run: pnpm audit --audit-level=high
+        continue-on-error: false
+
+  pip-audit:
+    name: pip Audit
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [platform, ai-service]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-audit-${{ matrix.service }}-${{ hashFiles(format('services/{0}/requirements.txt', matrix.service)) }}
+          restore-keys: |
+            ${{ runner.os }}-pip-audit-${{ matrix.service }}-
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Install service dependencies
+        working-directory: services/${{ matrix.service }}
+        run: pip install -e ".[dev]" --quiet
+
+      - name: Run pip-audit for ${{ matrix.service }}
+        working-directory: services/${{ matrix.service }}
+        run: pip-audit --requirement requirements.txt --strict
+
+  trivy-scan:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      matrix:
+        include:
+          - name: platform
+            context: services/platform
+            dockerfile: services/platform/Dockerfile
+          - name: ai-service
+            context: services/ai-service
+            dockerfile: services/ai-service/Dockerfile
+          - name: web
+            context: .
+            dockerfile: apps/web/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }} image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: aivalink/${{ matrix.name }}:scan
+          cache-from: type=gha,scope=security-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=security-${{ matrix.name }}
+
+      - name: Run Trivy vulnerability scan on ${{ matrix.name }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: aivalink/${{ matrix.name }}:scan
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+
+  trivy-fs-scan:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload Trivy filesystem SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem

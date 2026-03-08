@@ -1,0 +1,25 @@
+groups:
+  - name: aiva-gateway
+    interval: 30s
+    rules:
+      - alert: AivaGatewayHighErrorRate
+        expr: chat_error_rate > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gateway error rate too high"
+      - alert: AivaGatewayHighP95Latency
+        expr: chat_p95_latency_ms > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gateway p95 latency high"
+      - alert: AivaGatewayCostBurnSpike
+        expr: cost_units_per_min > 120
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Gateway cost burn rate spike"

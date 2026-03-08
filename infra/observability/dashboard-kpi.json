@@ -1,0 +1,10 @@
+{
+  "title": "AIVA Gateway Core KPI",
+  "description": "quality/cost/latency/failure realtime dashboard",
+  "panels": [
+    { "id": "active_sessions", "source": "/ops/kpi", "field": "activeSessions", "unit": "count" },
+    { "id": "error_rate", "source": "/ops/kpi", "field": "chat.errorRate", "unit": "ratio" },
+    { "id": "p95_latency", "source": "/ops/kpi", "field": "chat.p95LatencyMs", "unit": "ms" },
+    { "id": "cost_units_per_min", "source": "/ops/kpi", "field": "cost.unitsPerMinute", "unit": "units/min" }
+  ]
+}

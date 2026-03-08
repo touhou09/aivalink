@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body {
+      overflow: hidden;
+      background: transparent;
+      width: 100%;
+      height: 100%;
+      -webkit-app-region: drag;
+    }
+    canvas {
+      -webkit-app-region: no-drag;
+    }
+    #context-menu {
+      display: none;
+      position: fixed;
+      background: rgba(30,30,30,0.95);
+      border: 1px solid #555;
+      border-radius: 8px;
+      padding: 4px 0;
+      min-width: 150px;
+      z-index: 1000;
+      -webkit-app-region: no-drag;
+    }
+    .menu-item {
+      padding: 8px 16px;
+      color: #eee;
+      font-family: -apple-system, sans-serif;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .menu-item:hover { background: rgba(100,100,255,0.3); }
+    .menu-separator { height: 1px; background: #555; margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="context-menu">
+    <div class="menu-item" data-action="wave">Wave</div>
+    <div class="menu-item" data-action="idle">Idle</div>
+    <div class="menu-separator"></div>
+    <div class="menu-item" data-action="window-mode">Window Mode</div>
+    <div class="menu-item" data-action="quit">Quit</div>
+  </div>
+  <script>
+    // Initialize canvas to fill window
+    const canvas = document.getElementById('canvas');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Context menu handling
+    const menu = document.getElementById('context-menu');
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      menu.style.display = 'block';
+      menu.style.left = e.clientX + 'px';
+      menu.style.top = e.clientY + 'px';
+    });
+    document.addEventListener('click', () => { menu.style.display = 'none'; });
+
+    document.querySelectorAll('.menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const action = item.dataset.action;
+        // Send action to main process via IPC
+        if (window.electronAPI) {
+          window.electronAPI.petAction(action);
+        }
+      });
+    });
+
+    // Placeholder: draw a simple circle as pet avatar
+    // In production, this would use PIXI.js + pixi-live2d-display
+    const ctx = canvas.getContext('2d');
+    let frame = 0;
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      const bounce = Math.sin(frame * 0.02) * 5;
+
+      // Body
+      ctx.beginPath();
+      ctx.arc(centerX, centerY + bounce, 60, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(100, 150, 255, 0.9)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Eyes
+      const eyeY = centerY - 10 + bounce;
+      ctx.beginPath();
+      ctx.arc(centerX - 20, eyeY, 8, 0, Math.PI * 2);
+      ctx.arc(centerX + 20, eyeY, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'white';
+      ctx.fill();
+
+      // Pupils
+      ctx.beginPath();
+      ctx.arc(centerX - 18, eyeY + 2, 4, 0, Math.PI * 2);
+      ctx.arc(centerX + 22, eyeY + 2, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#333';
+      ctx.fill();
+
+      // Mouth
+      ctx.beginPath();
+      ctx.arc(centerX, centerY + 15 + bounce, 15, 0, Math.PI);
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      frame++;
+      requestAnimationFrame(animate);
+    }
+    animate();
+  </script>
+</body>
+</html>

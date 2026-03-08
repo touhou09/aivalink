@@ -1,0 +1,59 @@
+{{- if and .Values.gateway.enabled .Values.gateway.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: gateway
+spec:
+  minAvailable: {{ .Values.gateway.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: gateway
+{{- end }}
+{{- if and .Values.platform.enabled .Values.platform.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: platform
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: platform
+spec:
+  minAvailable: {{ .Values.platform.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: platform
+{{- end }}
+{{- if and .Values.aiService.enabled .Values.aiService.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-service
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: ai-service
+spec:
+  minAvailable: {{ .Values.aiService.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: ai-service
+{{- end }}
+{{- if and .Values.web.enabled .Values.web.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: web
+spec:
+  minAvailable: {{ .Values.web.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: web
+{{- end }}

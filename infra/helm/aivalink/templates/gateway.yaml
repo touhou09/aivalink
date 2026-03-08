@@ -1,0 +1,107 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: {{ .Values.gateway.image }}
+          ports:
+            - containerPort: 3000
+          env:
+            {{- range $key, $value := .Values.gateway.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.gateway.llmApiSecret | default "llm-api-keys" }}
+                optional: true
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.gateway.probes.readiness.path }}
+              port: {{ .Values.gateway.probes.readiness.port }}
+            initialDelaySeconds: {{ .Values.gateway.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.gateway.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.gateway.probes.readiness.failureThreshold }}
+            timeoutSeconds: {{ .Values.gateway.probes.readiness.timeoutSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.gateway.probes.liveness.path }}
+              port: {{ .Values.gateway.probes.liveness.port }}
+            initialDelaySeconds: {{ .Values.gateway.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.gateway.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.gateway.probes.liveness.failureThreshold }}
+            timeoutSeconds: {{ .Values.gateway.probes.liveness.timeoutSeconds }}
+        - name: goclaw
+          image: {{ .Values.goclaw.image | default "ghcr.io/zeroclaw/goclaw:latest" }}
+          ports:
+            - containerPort: 4316
+          env:
+            - name: GOCLAW_PORT
+              value: "4316"
+            - name: GOCLAW_LOG_LEVEL
+              value: "info"
+          envFrom:
+            - secretRef:
+                name: {{ .Values.gateway.llmApiSecret | default "llm-api-keys" }}
+                optional: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4316
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4316
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: {{ .Values.global.namespace }}
+spec:
+  selector:
+    app: gateway
+  ports:
+    - port: {{ .Values.gateway.service.port }}
+      targetPort: 3000
+{{- end }}

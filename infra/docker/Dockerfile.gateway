@@ -1,0 +1,30 @@
+FROM node:20-slim AS base
+RUN corepack enable && \
+    apt-get update && apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
+FROM base AS builder
+WORKDIR /app
+COPY package.json pnpm-workspace.yaml turbo.json ./
+COPY pnpm-lock.yaml* ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/memory/package.json ./packages/memory/
+COPY packages/security/package.json ./packages/security/
+COPY packages/orchestrator/package.json ./packages/orchestrator/
+COPY packages/gateway/package.json ./packages/gateway/
+RUN pnpm install
+
+COPY tsconfig.base.json ./
+COPY packages/ ./packages/
+RUN pnpm turbo build --filter=@aiva/gateway
+
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/packages/gateway/dist ./dist
+COPY --from=builder /app/packages/gateway/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+
+EXPOSE 3000
+CMD ["node", "dist/server.js"]

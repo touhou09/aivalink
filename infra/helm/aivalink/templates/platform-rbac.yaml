@@ -1,0 +1,40 @@
+{{- if .Values.platform.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform
+  namespace: {{ .Values.global.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-vtuber-manager
+  namespace: {{ .Values.global.namespace }}
+rules:
+  # Manage VTuber Pods
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Manage ConfigMaps for VTuber configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Manage Services for VTuber instances
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-vtuber-manager
+  namespace: {{ .Values.global.namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: platform
+    namespace: {{ .Values.global.namespace }}
+roleRef:
+  kind: Role
+  name: platform-vtuber-manager
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

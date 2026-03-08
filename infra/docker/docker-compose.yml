@@ -1,0 +1,256 @@
+services:
+  # PostgreSQL - Main database (pgvector extension included)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aivalink-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aivalink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aivalink_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-aivalink}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aivalink}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aivalink-network
+
+  # PgBouncer - PostgreSQL connection pooler (transaction mode)
+  pgbouncer:
+    image: bitnami/pgbouncer:1.22.1
+    container_name: aivalink-pgbouncer
+    environment:
+      - POSTGRESQL_HOST=postgres
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_DATABASE=${POSTGRES_DB:-aivalink}
+      - POSTGRESQL_USERNAME=${POSTGRES_USER:-aivalink}
+      - POSTGRESQL_PASSWORD=${POSTGRES_PASSWORD:-aivalink_secret}
+      - PGBOUNCER_DATABASE=${POSTGRES_DB:-aivalink}
+      - PGBOUNCER_POOL_MODE=transaction
+      - PGBOUNCER_MAX_CLIENT_CONN=200
+      - PGBOUNCER_DEFAULT_POOL_SIZE=20
+      - PGBOUNCER_MIN_POOL_SIZE=5
+      - PGBOUNCER_RESERVE_POOL_SIZE=5
+      - PGBOUNCER_SERVER_RESET_QUERY=DISCARD ALL
+      - PGBOUNCER_IGNORE_STARTUP_PARAMETERS=extra_float_digits
+    volumes:
+      - ./pgbouncer.ini:/opt/bitnami/pgbouncer/conf/pgbouncer.ini:ro
+    ports:
+      - "5432:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -U ${POSTGRES_USER:-aivalink}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aivalink-network
+
+  # Redis - Sessions and cache
+  redis:
+    image: redis:7-alpine
+    container_name: aivalink-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aivalink-network
+
+  # Platform API - FastAPI backend (PersonaLink)
+  platform:
+    build:
+      context: ../../services/platform
+      dockerfile: Dockerfile
+    container_name: aivalink-platform
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-aivalink}:${POSTGRES_PASSWORD:-aivalink_secret}@pgbouncer:5432/${POSTGRES_DB:-aivalink}
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DOCKER_NETWORK=docker_aivalink-network
+      - VTUBER_ENGINE_HOST_PATH=${VTUBER_ENGINE_HOST_PATH:-}
+      - VTUBER_CONFIGS_VOLUME=docker_vtuber_configs
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - vtuber_configs:/app/vtuber-configs
+    ports:
+      - "8081:8080"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aivalink-network
+
+  # Gateway - Fastify WebSocket server (Aiva)
+  gateway:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.gateway
+    container_name: aivalink-gateway
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-aivalink}:${POSTGRES_PASSWORD:-aivalink_secret}@postgres:5432/${POSTGRES_DB:-aivalink}
+      - AI_SERVICE_URL=http://ai-service:8000
+      - GATEWAY_CHAT_MODE=${GATEWAY_CHAT_MODE:-orchestrator}
+      - REDIS_URL=redis://redis:6379
+      - GOCLAW_URL=http://goclaw:4316
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - aivalink-network
+
+  # GoClaw - Agent Workflow Engine (sidecar)
+  goclaw:
+    image: ghcr.io/zeroclaw/goclaw:latest
+    container_name: aivalink-goclaw
+    environment:
+      - GOCLAW_PORT=4316
+      - GOCLAW_LOG_LEVEL=info
+      - GOCLAW_LLM_PROVIDER=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    expose:
+      - "4316"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4316/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - aivalink-network
+
+  # AI Service - Python microservice (Aiva)
+  ai-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.ai-service
+    container_name: aivalink-ai-service
+    expose:
+      - "8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - aivalink-network
+
+  # Web Frontend - React + Vite (PersonaLink)
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+    container_name: aivalink-web
+    environment:
+      - VITE_API_URL=/api
+      - VITE_WS_URL=/ws
+      - VITE_GATEWAY_WS_URL=/gateway
+    ports:
+      - "3001:3000"
+    depends_on:
+      - platform
+    networks:
+      - aivalink-network
+
+  # Prometheus - Metrics collection
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: aivalink-prometheus
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+    networks:
+      - aivalink-network
+
+  # Grafana - Metrics visualization
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: aivalink-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3002:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - aivalink-network
+
+  # Nginx - Reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: aivalink-nginx
+    volumes:
+      - ../nginx/aivalink.conf:/etc/nginx/conf.d/default.conf:ro
+      # Live2D models served statically (mount your models directory here)
+      # - ../../assets/live2d-models:/usr/share/nginx/html/models:ro
+    ports:
+      - "8000:80"
+    depends_on:
+      - platform
+      - gateway
+      - web
+    networks:
+      - aivalink-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  vtuber_configs:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  aivalink-network:
+    driver: bridge

@@ -1,0 +1,105 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aivalink
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: aivalink
+    {{- include "aivalink.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.ingress.className }}
+    {{- if .Values.ingress.tls.enabled }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    {{- end }}
+    # WebSocket upgrade support for gateway
+    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ index .Values.ingress.annotations "nginx.ingress.kubernetes.io/proxy-read-timeout" | default "3600" | quote }}
+    nginx.ingress.kubernetes.io/proxy-send-timeout: {{ index .Values.ingress.annotations "nginx.ingress.kubernetes.io/proxy-send-timeout" | default "3600" | quote }}
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ index .Values.ingress.annotations "nginx.ingress.kubernetes.io/proxy-body-size" | default "50m" | quote }}
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: {{ index .Values.ingress.annotations "nginx.ingress.kubernetes.io/rate-limit" | default "100" | quote }}
+    nginx.ingress.kubernetes.io/limit-connections: {{ index .Values.ingress.annotations "nginx.ingress.kubernetes.io/limit-connections" | default "20" | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # Gateway - WebSocket and API
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: {{ .Values.gateway.service.port }}
+          - path: /api/gateway
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: {{ .Values.gateway.service.port }}
+          # Platform API
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: platform
+                port:
+                  number: {{ .Values.platform.service.port }}
+          # Web Frontend (catch-all)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: {{ .Values.web.service.port }}
+---
+# Separate ingress for gateway WebSocket with upgrade annotations
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aivalink-ws
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: aivalink
+    {{- include "aivalink.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.ingress.className }}
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+    {{- if .Values.ingress.tls.enabled }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /socket.io
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: {{ .Values.gateway.service.port }}
+{{- end }}

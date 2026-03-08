@@ -1,0 +1,99 @@
+{{- if .Values.platform.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: platform
+    {{- include "aivalink.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.platform.replicas }}
+  selector:
+    matchLabels:
+      app: platform
+  template:
+    metadata:
+      labels:
+        app: platform
+    spec:
+      serviceAccountName: platform
+      {{- with .Values.platform.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.platform.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.platform.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: platform
+          image: {{ .Values.platform.image }}
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              value: {{ .Values.platform.env.DATABASE_URL }}
+            - name: REDIS_URL
+              value: {{ .Values.platform.env.REDIS_URL }}
+            - name: SECRET_KEY
+              value: {{ .Values.platform.env.SECRET_KEY | default "" }}
+            - name: LETTA_URL
+              value: {{ .Values.platform.env.LETTA_URL | default "" }}
+            - name: ORCHESTRATOR_TYPE
+              value: {{ .Values.platform.env.ORCHESTRATOR_TYPE | default "docker" }}
+            - name: K8S_NAMESPACE
+              value: {{ .Values.global.namespace }}
+            - name: VTUBER_IMAGE
+              value: {{ .Values.vtuber.image | default "aivalink-vtuber:latest" }}
+            {{- if .Values.platform.llmApiSecret }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.platform.llmApiSecret }}
+                  key: OPENAI_API_KEY
+                  optional: true
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.platform.llmApiSecret }}
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.platform.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.platform.probes.readiness.path }}
+              port: {{ .Values.platform.probes.readiness.port }}
+            initialDelaySeconds: {{ .Values.platform.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.platform.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.platform.probes.readiness.failureThreshold }}
+            timeoutSeconds: {{ .Values.platform.probes.readiness.timeoutSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.platform.probes.liveness.path }}
+              port: {{ .Values.platform.probes.liveness.port }}
+            initialDelaySeconds: {{ .Values.platform.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.platform.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.platform.probes.liveness.failureThreshold }}
+            timeoutSeconds: {{ .Values.platform.probes.liveness.timeoutSeconds }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform
+  namespace: {{ .Values.global.namespace }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.platform.service.port }}
+      targetPort: 8080
+  selector:
+    app: platform
+{{- end }}
