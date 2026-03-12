@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest",
+    "test": "vitest run",
     "test:e2e": "playwright test",
     "lint": "eslint src --ext ts,tsx"
   },
