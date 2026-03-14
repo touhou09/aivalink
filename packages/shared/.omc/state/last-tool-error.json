@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"find /Users/yuseungju/workspace/aivalink -name '*.tsbuildinfo' -not -path '*/node_modules/*' -delete && rm -rf /Users/yuseungju/workspace/aivalink/packages/*/dist /Users/yuseungju/workspac...",
-  "error": "Exit code 1\n(eval):1: no matches found: /Users/yuseungju/workspace/aivalink/apps/*/dist",
-  "timestamp": "2026-03-08T02:42:11.792Z",
-  "retry_count": 1
-}
