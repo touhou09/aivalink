@@ -2,6 +2,13 @@ import os
 import uuid
 from collections.abc import AsyncGenerator
 
+os.environ.setdefault("TEST_MODE", "true")
+os.environ.setdefault("DOCKER_HOST", "unix:///Users/yuseungju/.colima/default/docker.sock")
+os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
+# Provide valid test credentials so crypto/auth utils work in test environment
+os.environ.setdefault("FERNET_KEY", "28x983F4MzujsJW7uZMr20OohquAcHFJ8fjqwagnKpk=")
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-for-testing-only")
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -10,9 +17,6 @@ from testcontainers.postgres import PostgresContainer
 
 from app.core.security import create_access_token
 from app.models.base import Base
-
-os.environ.setdefault("DOCKER_HOST", "unix:///Users/yuseungju/.colima/default/docker.sock")
-os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 
 
 # Session-scoped postgres container (sync fixture)

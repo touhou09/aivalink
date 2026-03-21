@@ -3,6 +3,7 @@ import json
 import uuid
 from collections.abc import Callable
 
+import structlog
 from fastapi import WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -14,6 +15,8 @@ from app.models.conversation_log import ConversationLog
 from app.models.instance import Instance
 from app.models.user import User
 from app.orchestrator.tool_executor import ToolExecutor
+
+logger = structlog.get_logger(__name__)
 
 # Configurable session factory — overridden in tests
 _session_factory_override: Callable | None = None
@@ -63,7 +66,7 @@ async def _save_conversation_log(
             db.add(log)
             await db.commit()
     except Exception:
-        pass
+        logger.exception("Failed to save conversation log", role=role, content=content[:50])
 
 
 async def websocket_endpoint(websocket: WebSocket, instance_id: uuid.UUID) -> None:
@@ -161,7 +164,15 @@ async def websocket_endpoint(websocket: WebSocket, instance_id: uuid.UUID) -> No
                     ws_data = pipeline_msg.data.copy()
 
                     if pipeline_msg.type == "audio-chunk" and isinstance(ws_data.get("audio"), bytes):
-                        ws_data["audio"] = base64.b64encode(ws_data["audio"]).decode("utf-8")
+                        audio_bytes = ws_data.pop("audio")
+                        # Send metadata as JSON
+                        await websocket.send_json({
+                            "type": "audio-chunk-meta",
+                            "data": ws_data,
+                        })
+                        # Send audio as binary frame
+                        await websocket.send_bytes(audio_bytes)
+                        continue  # skip the regular JSON send below
 
                     if pipeline_msg.type == "text-complete":
                         full_response = ws_data.get("full_text", "")
@@ -174,11 +185,13 @@ async def websocket_endpoint(websocket: WebSocket, instance_id: uuid.UUID) -> No
                         "data": ws_data,
                     })
 
+                logger.info("pipeline_done", full_response_len=len(full_response), emotion=response_emotion)
                 if full_response:
                     await _save_conversation_log(
                         session_factory, instance_id, user_id, character_id,
                         "assistant", full_response, response_emotion,
                     )
+                    logger.info("assistant_saved", content=full_response[:50])
 
                     tool_call = tool_executor.detect_tool_call(full_response)
                     if tool_call:
@@ -206,7 +219,15 @@ async def websocket_endpoint(websocket: WebSocket, instance_id: uuid.UUID) -> No
                     ws_data = pipeline_msg.data.copy()
 
                     if pipeline_msg.type == "audio-chunk" and isinstance(ws_data.get("audio"), bytes):
-                        ws_data["audio"] = base64.b64encode(ws_data["audio"]).decode("utf-8")
+                        audio_bytes_out = ws_data.pop("audio")
+                        # Send metadata as JSON
+                        await websocket.send_json({
+                            "type": "audio-chunk-meta",
+                            "data": ws_data,
+                        })
+                        # Send audio as binary frame
+                        await websocket.send_bytes(audio_bytes_out)
+                        continue  # skip the regular JSON send below
 
                     if pipeline_msg.type == "user-transcript":
                         await _save_conversation_log(

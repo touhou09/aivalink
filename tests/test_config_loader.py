@@ -5,6 +5,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.engine.config_loader import load_pipeline
 from app.engine.pipeline import VTuberPipeline
 from app.models.asr_config import ASRConfig
@@ -139,6 +140,8 @@ class TestConfigLoader:
         await db_session.flush()
         await db_session.refresh(char)
 
-        with pytest.raises(AppError) as exc_info:
-            await load_pipeline(db_session, char.id)
-        assert exc_info.value.code == "LLM_CONFIG_REQUIRED"
+        from unittest.mock import patch
+        with patch.object(settings, "TEST_MODE", False):
+            with pytest.raises(AppError) as exc_info:
+                await load_pipeline(db_session, char.id)
+            assert exc_info.value.code == "LLM_CONFIG_REQUIRED"

@@ -1,12 +1,14 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
+from app.config import settings
 from app.instance_manager.manager import InstanceManager
+from app.middleware.rate_limit import limiter
 from app.models.character import Character
 from app.models.user import User
 from app.schemas.instance import InstanceCreate, InstanceResponse, InstanceStatusResponse
@@ -14,8 +16,12 @@ from app.schemas.instance import InstanceCreate, InstanceResponse, InstanceStatu
 router = APIRouter(prefix="/api/instances", tags=["instances"])
 
 
+def _ws_base() -> str:
+    return settings.BASE_URL.replace("http://", "ws://").replace("https://", "wss://")
+
+
 def _to_response(instance, character_name: str) -> InstanceResponse:
-    ws_url = f"ws://localhost:8000/client-ws/{instance.id}" if instance.status == "running" else None
+    ws_url = f"{_ws_base()}/client-ws/{instance.id}" if instance.status == "running" else None
     return InstanceResponse(
         id=instance.id,
         character_id=instance.character_id,
@@ -29,7 +35,9 @@ def _to_response(instance, character_name: str) -> InstanceResponse:
 
 
 @router.post("", status_code=201)
+@limiter.limit("10/minute")
 async def create_instance(
+    request: Request,
     body: InstanceCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -73,7 +81,7 @@ async def get_instance_status(
         id=instance.id,
         status=instance.status,
         character_name=char.name if char else "Unknown",
-        websocket_url=f"ws://localhost:8000/client-ws/{instance.id}" if instance.status == "running" else None,
+        websocket_url=f"{_ws_base()}/client-ws/{instance.id}" if instance.status == "running" else None,
         uptime_seconds=uptime,
         started_at=instance.started_at,
     )

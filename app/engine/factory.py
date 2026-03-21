@@ -59,11 +59,21 @@ class TTSFactory:
 
 def register_real_engines() -> None:
     """Register real engine implementations. Called at app startup."""
+    from app.engine.llm.ollama_llm import OllamaLLM
     from app.engine.llm.openai_llm import OpenAILLM
+    from app.engine.llm.openrouter_llm import OpenRouterLLM
     from app.engine.tts.edge_tts_engine import EdgeTTSEngine
 
     _LLM_REGISTRY["openai"] = OpenAILLM
+    _LLM_REGISTRY["openrouter"] = OpenRouterLLM
+    _LLM_REGISTRY["ollama"] = OllamaLLM
     _TTS_REGISTRY["edge_tts"] = EdgeTTSEngine
+
+    from app.engine.asr.openai_whisper_asr import OpenAIWhisperASR
+    from app.engine.asr.web_speech_asr import WebSpeechASR
+
+    _ASR_REGISTRY["openai_whisper"] = OpenAIWhisperASR
+    _ASR_REGISTRY["web_speech"] = WebSpeechASR
 
     try:
         from app.engine.asr.faster_whisper_asr import FasterWhisperASR

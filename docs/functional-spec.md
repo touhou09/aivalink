@@ -1219,3 +1219,94 @@ Authorization: Bearer {access_token}
 | 422 | Unprocessable Entity | 입력 형식 오류 |
 | 429 | Too Many Requests | Rate Limit, 인스턴스 제한 초과 |
 | 500 | Internal Server Error | 서버 내부 오류 |
+
+---
+
+## F5. 멀티 플랫폼 배포 전략
+
+### F5.1 플랫폼 개요
+
+| 플랫폼 | 기술 | 마이크 접근 | 배포 방식 | 우선순위 |
+|--------|------|-----------|----------|---------|
+| 웹 (브라우저) | React + Vite | HTTPS 필수 | Vercel/Netlify/도메인 | P0 |
+| 데스크톱 (Mac/Win/Linux) | Electron + React | 제약 없음 | .dmg / .exe / .AppImage | P1 |
+| 모바일 (iOS/Android) | Capacitor + React | 네이티브 권한 | App Store / Play Store | P2 |
+| PWA | React + Service Worker | HTTPS 필수 | 웹 배포 + 홈화면 설치 | P2 |
+
+### F5.2 코드 아키텍처
+
+- 단일 React 코드베이스로 모든 플랫폼 지원
+- 빌드 타겟만 다름:
+  - `npm run dev:web` → 웹 개발 서버
+  - `npm run dev` → Electron 개발 모드
+  - `npm run build:web` → 웹 프로덕션 빌드
+  - `npm run build:mac` → macOS .dmg
+  - `npm run build:win` → Windows .exe
+  - `npm run build:linux` → Linux .AppImage
+
+### F5.3 HTTPS/마이크 보안 전략
+
+| 환경 | 마이크 접근 방식 | HTTPS 처리 |
+|------|----------------|-----------|
+| localhost 개발 | HTTP 허용 (secure context) | 불필요 |
+| LAN IP 테스트 | HTTPS 필수 | mkcert 자체 서명 인증서 |
+| 프로덕션 웹 | HTTPS 필수 | Let's Encrypt 자동 (Vercel/Nginx) |
+| Electron 앱 | file:// 프로토콜, 제약 없음 | 불필요 |
+| Capacitor 앱 | 네이티브 권한 시스템 | 불필요 |
+
+### F5.4 Electron 데스크톱 앱 구조
+
+```
+┌─ Electron App ──────────────────────┐
+│  ┌─ Main Process ─────────────────┐ │
+│  │  - 앱 생명주기 관리            │ │
+│  │  - IPC 채널 (마이크 권한 등)   │ │
+│  │  - 시스템 트레이/메뉴          │ │
+│  └────────────────────────────────┘ │
+│  ┌─ Renderer (Chromium) ──────────┐ │
+│  │  - 기존 React 앱 (동일 코드)  │ │
+│  │  - Live2D WebGL 렌더링         │ │
+│  │  - WebSocket → 백엔드 연결     │ │
+│  │  - getUserMedia (자유 접근)    │ │
+│  └────────────────────────────────┘ │
+└─────────────────────────────────────┘
+        │ HTTP/WS
+        ▼
+┌─ Backend Server ────────────────────┐
+│  FastAPI (동일한 백엔드)            │
+└─────────────────────────────────────┘
+```
+
+### F5.5 엔진/서비스 현황
+
+#### LLM Provider
+| Provider | 방식 | 상태 |
+|----------|------|------|
+| OpenAI | API Key | 구현됨 |
+| OpenRouter | API Key (멀티모델) | 구현됨 |
+| Ollama | 로컬, 키 불필요 | 구현됨 |
+| Anthropic | API Key | 계획 |
+
+#### TTS Engine
+| Engine | 방식 | 상태 |
+|--------|------|------|
+| Edge TTS | 무료, 다국어 | 구현됨 |
+| Stub (Silent) | 테스트용 | 구현됨 |
+
+#### ASR Engine
+| Engine | 방식 | 상태 |
+|--------|------|------|
+| Faster Whisper | 로컬 CPU/GPU | 구현됨 |
+| OpenAI Whisper | 클라우드 API | 구현됨 |
+| Web Speech API | 브라우저 기반 | 구현됨 |
+| Stub | 테스트용 | 구현됨 |
+
+#### Live2D
+| 항목 | 상태 |
+|------|------|
+| Cubism WebSDK (3-5) | 구현됨 |
+| 감정 태그 시스템 ([happy] [sad] 등) | 구현됨 |
+| 모션 재생 (emotion → motion group) | 구현됨 |
+| 립싱크 (AudioAnalyser → ParamMouthOpenY) | 구현됨 |
+| 마우스 트래킹 (model.focus) | 구현됨 |
+| 로컬 모델 호스팅 (public/models/) | 구현됨 |

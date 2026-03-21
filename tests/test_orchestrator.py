@@ -3,8 +3,6 @@ import pytest
 from app.orchestrator.tool_executor import ToolExecutor
 from tests.conftest import auth_headers
 
-pytestmark = pytest.mark.asyncio
-
 
 class TestToolCallDetection:
     """Test ToolExecutor.detect_tool_call with various inputs."""
@@ -82,6 +80,7 @@ class TestToolExecution:
         assert "search_web" in tools
 
 
+@pytest.mark.asyncio
 class TestAgentsAPI:
     """Test the /api/agents REST endpoints."""
 

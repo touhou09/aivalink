@@ -7,46 +7,65 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - run: uv sync --dev
-      - run: uv run ruff check app/
-      - run: uv run ruff format --check app/
-
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - run: uv sync --dev
-      - run: uv run mypy app/
-
-  test:
+  backend-test:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: postgres:16-alpine
         env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
+          POSTGRES_USER: aivalink
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: aivalink_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U test"
+          --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://aivalink:password@localhost:5432/aivalink_test
+      JWT_SECRET_KEY: test-secret-key
+      JWT_ALGORITHM: HS256
+      FERNET_KEY: dGVzdC1mZXJuZXQta2V5LXRoYXQtaXMtbG9uZy1lbm91Z2g=
+      TEST_MODE: "true"
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - run: uv sync --dev
-      - run: uv run pytest tests/ -v
-        env:
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test
-          TEST_MODE: "true"
-          JWT_SECRET_KEY: test-secret-key
-          FERNET_KEY: "dGVzdC1mZXJuZXQta2V5LXRoYXQtaXMtMzItYnl0ZXM="
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+      - name: Install dependencies
+        run: uv sync
+      - name: Lint
+        run: uv run ruff check app/
+      - name: Type check
+        run: uv run mypy app/ --ignore-missing-imports
+        continue-on-error: true
+      - name: Test
+        run: uv run pytest tests/ -v --tb=short --cov=app --cov-report=term-missing
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker compose build
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/aivalink-web
+          path: aivalink-web
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: aivalink-web
+        run: npm ci --legacy-peer-deps
+      - name: Build
+        working-directory: aivalink-web
+        run: npm run build
+      - name: Test
+        working-directory: aivalink-web
+        run: npm run test

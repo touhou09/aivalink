@@ -1,5 +1,6 @@
 import uuid
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,8 @@ from app.models.character import Character
 from app.models.llm_config import LLMConfig
 from app.models.tts_config import TTSConfig
 from app.utils.crypto import decrypt_value
+
+logger = structlog.get_logger(__name__)
 
 
 async def load_pipeline(db: AsyncSession, character_id: uuid.UUID) -> VTuberPipeline:
@@ -89,10 +92,12 @@ async def load_pipeline(db: AsyncSession, character_id: uuid.UUID) -> VTuberPipe
 
     asr = ASRFactory.create(asr_config.engine, **asr_kwargs)
 
-    return VTuberPipeline(
+    pipeline = VTuberPipeline(
         asr=asr,
         llm=llm,
         tts=tts,
         character_name=character.name,
         emotion_map=character.emotion_map or {},
     )
+    logger.info("pipeline_loaded", character_id=str(character_id), character_name=character.name)
+    return pipeline

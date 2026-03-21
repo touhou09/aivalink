@@ -18,7 +18,7 @@ class Character(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     persona_prompt: Mapped[str] = mapped_column(Text, nullable=False)
-    live2d_model_id: Mapped[str] = mapped_column(String(100), default="haru", nullable=False)
+    live2d_model_id: Mapped[str] = mapped_column(String(500), default="haru", nullable=False)
     emotion_map: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     llm_config_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("llm_configs.id", ondelete="SET NULL"), nullable=True

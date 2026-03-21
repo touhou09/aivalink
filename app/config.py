@@ -11,13 +11,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # JWT
-    JWT_SECRET_KEY: str = "change-me-to-a-random-secret-key"
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # Encryption
-    FERNET_KEY: str = "28x983F4MzujsJW7uZMr20OohquAcHFJ8fjqwagnKpk="
+    FERNET_KEY: str = ""
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
@@ -28,8 +28,23 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_INSTANCES_PER_USER: int = 1
 
+    # CORS
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
+    # Base URL
+    BASE_URL: str = "http://localhost:8000"
+
     # Test mode
     TEST_MODE: bool = False
 
 
 settings = Settings()
+
+
+def validate_settings(s: Settings) -> None:
+    """Validate critical settings on startup."""
+    if not s.TEST_MODE:
+        if not s.FERNET_KEY:
+            raise ValueError("FERNET_KEY must be set in environment variables")
+        if not s.JWT_SECRET_KEY:
+            raise ValueError("JWT_SECRET_KEY must be set in environment variables")

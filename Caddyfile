@@ -1,0 +1,22 @@
+:443 {
+	tls internal
+
+	# API + WebSocket → Backend
+	handle /api/* {
+		reverse_proxy localhost:8000
+	}
+	handle /client-ws/* {
+		reverse_proxy localhost:8000
+	}
+	handle /mcp-ws/* {
+		reverse_proxy localhost:8000
+	}
+	handle /health {
+		reverse_proxy localhost:8000
+	}
+
+	# Everything else → Frontend
+	handle {
+		reverse_proxy localhost:5173
+	}
+}

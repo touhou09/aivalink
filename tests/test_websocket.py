@@ -1,12 +1,13 @@
 """WebSocket tests using starlette TestClient (sync, separate event loop)."""
 
+import base64
 import uuid
 from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.core.security import create_access_token, hash_password
@@ -98,6 +99,7 @@ class TestWebSocket:
 
     def _get_client(self):
         from starlette.testclient import TestClient
+
         from app.main import app
         return TestClient(app)
 
@@ -115,6 +117,15 @@ class TestWebSocket:
                 pong = ws.receive_json()
                 assert pong["type"] == "pong"
 
+    def _receive_msg(self, ws):
+        """Receive next message; skip binary frames, return parsed JSON."""
+        while True:
+            raw = ws.receive()
+            if "bytes" in raw:
+                continue  # binary audio frame — skip
+            import json
+            return json.loads(raw["text"])
+
     def test_text_input(self, ws_env):
         instance_id = ws_env["instance_id"]
         token = ws_env["token"]
@@ -128,16 +139,16 @@ class TestWebSocket:
 
                 messages = []
                 while True:
-                    msg = ws.receive_json()
+                    msg = self._receive_msg(ws)
                     messages.append(msg)
-                    if msg["type"] == "audio-chunk" and msg["data"].get("is_final"):
+                    if msg["type"] == "audio-chunk-meta" and msg["data"].get("is_final"):
                         break
 
                 types = [m["type"] for m in messages]
                 assert "text-chunk" in types
                 assert "text-complete" in types
                 assert "emotion" in types
-                assert "audio-chunk" in types
+                assert "audio-chunk-meta" in types
 
                 complete = next(m for m in messages if m["type"] == "text-complete")
                 assert "Echo: hello" in complete["data"]["full_text"]
@@ -171,3 +182,46 @@ class TestWebSocket:
                 ws.send_json({"type": "ping", "data": {}})
                 pong = ws.receive_json()
                 assert pong["type"] == "pong"
+
+    def test_audio_input(self, ws_env):
+        instance_id = ws_env["instance_id"]
+        token = ws_env["token"]
+        audio_b64 = base64.b64encode(b"fake audio data").decode()
+
+        with self._get_client() as tc:
+            with tc.websocket_connect(f"/client-ws/{instance_id}?token={token}") as ws:
+                connected = ws.receive_json()
+                assert connected["type"] == "connected"
+
+                ws.send_json({"type": "audio-input", "data": {"audio": audio_b64}})
+
+                messages = []
+                while True:
+                    msg = self._receive_msg(ws)
+                    messages.append(msg)
+                    if msg["type"] == "audio-chunk-meta" and msg["data"].get("is_final"):
+                        break
+
+                types = [m["type"] for m in messages]
+                assert "user-transcript" in types
+                assert "text-chunk" in types
+                assert "text-complete" in types
+                assert "emotion" in types
+                assert "audio-chunk-meta" in types
+
+                transcript = next(m for m in messages if m["type"] == "user-transcript")
+                assert transcript["data"]["text"] == "Hello from stub ASR"
+
+    def test_invalid_json(self, ws_env):
+        instance_id = ws_env["instance_id"]
+        token = ws_env["token"]
+
+        with self._get_client() as tc:
+            with tc.websocket_connect(f"/client-ws/{instance_id}?token={token}") as ws:
+                connected = ws.receive_json()
+                assert connected["type"] == "connected"
+
+                ws.send_text("not json at all")
+                error = ws.receive_json()
+                assert error["type"] == "error"
+                assert error["data"]["code"] == "INVALID_MESSAGE"

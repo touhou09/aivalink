@@ -2,13 +2,17 @@ import asyncio
 import uuid
 from datetime import UTC, datetime
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import AppError
+from app.instance_manager.redis_store import redis_del_instance, redis_set_instance
 from app.models.character import Character
 from app.models.instance import Instance
+
+logger = structlog.get_logger(__name__)
 
 
 class InstanceManager:
@@ -57,6 +61,17 @@ class InstanceManager:
         await db.flush()
         await db.refresh(instance)
 
+        await redis_set_instance(
+            str(instance.id),
+            {
+                "user_id": str(user_id),
+                "character_id": str(character_id),
+                "status": "running",
+                "started_at": datetime.now(UTC).isoformat(),
+            },
+        )
+
+        logger.info("instance_started", instance_id=str(instance.id), user_id=str(user_id), character_id=str(character_id))
         return instance
 
     @classmethod
@@ -81,8 +96,12 @@ class InstanceManager:
             cls._tasks[instance_id].cancel()
             del cls._tasks[instance_id]
 
+        await redis_del_instance(str(instance_id))
+
         await db.flush()
         await db.refresh(instance)
+
+        logger.info("instance_stopped", instance_id=str(instance_id), user_id=str(user_id))
         return instance
 
     @classmethod

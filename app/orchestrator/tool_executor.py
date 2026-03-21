@@ -84,6 +84,22 @@ class ToolExecutor:
                     return text[start : i + 1]
         return None
 
+    def register_mcp_tools(self, mcp_client) -> None:
+        """Register tools from a connected MCP client as proxied tool handlers."""
+        for tool_name in mcp_client.available_tools:
+            # Create a closure that captures the tool name and client
+            def make_handler(name, client):
+                def handler(**kwargs):
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # We're in an async context, can't use run_until_complete
+                        # Return a placeholder; actual execution happens async
+                        return {"status": "pending", "tool": name}
+                    return loop.run_until_complete(client.call_tool(name, kwargs))
+                return handler
+            self.register_tool(f"mcp:{tool_name}", make_handler(tool_name, mcp_client))
+
     def execute_tool(self, tool_call: dict) -> dict:
         """Execute a registered tool and return the result.
 
